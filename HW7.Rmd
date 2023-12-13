@@ -1,0 +1,70 @@
+---
+title: "DSBA 6115 HW 7"
+author: "Ethan Pinto"
+date: "`r Sys.Date()`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+For your homework, download the authorship data set from the course webpage. 
+This data set consists of word counts from chapters written by four British authors. 
+Use the provided training and testing splits of the authorship data. Compare and contrast the following methods for predicting authorship: 
+
+(a)	Classification Trees. (Which error measure did you use? Why?) 
+
+Preparing Data:
+```{r}
+## install.packages("caret")
+## install.packages("rpart")
+## install.packages("readr")
+## install.packages("rpart.plot")
+
+library(ISLR)
+library(readr)
+library(caret)
+library(rpart)
+
+trainingData <- read.csv("C:\\Users\\28epi\\Downloads\\author_training.csv")
+testingData <- read.csv("C:\\Users\\28epi\\Downloads\\author_testing.csv")
+
+levels(predictions)
+levels(testingData$Author)
+
+table(predictions)
+raw_predictions <- predict(authorshipModel, testingData, type = "class")
+head(raw_predictions)
+
+```
+
+
+```{r}
+predictions <- factor(raw_predictions, levels = levels(testingData$Author))
+levels(predictions)
+table(predictions)
+confusionMatrix(predictions, testingData$Author)
+```
+
+
+(b)	Bagging. 
+```{r}
+
+```
+
+
+(c)	Boosting. (Which boosting method did you use? Why?) 
+```{r}
+
+```
+
+(d)	Random Forests. (Which parameter settings did you use? Why?) 
+```{r}
+
+```
+
+Reflect upon your results. Which method yields the best error rate? Which method yields the most interpretable results? Which words are most important for authorship attribution? 
+```{r}
+
+```
+

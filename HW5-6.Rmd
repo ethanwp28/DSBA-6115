@@ -1,0 +1,327 @@
+---
+title: "DSBA 6115 HW 5-6"
+author: "Ethan Pinto"
+date: "`r Sys.Date()`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Chapter 5 Question 6
+
+a)Using the summary() and glm() functions, determine the estimated standard errors for the coefficients associated with income and balance in a multiple logistic regression model that usesboth predictors
+
+```{r}
+library(ISLR)
+library(boot)
+
+data("Default")
+set.seed(6115)
+fit <- glm(default ~ income + balance, data=Default, family=binomial)
+summary_fit <- summary(fit)
+std_errors <- summary_fit$coefficients[, "Std. Error"]
+```
+
+b) Write a function, boot.fn(), that takes as input the Default data set as well as an index of the observations, and that outputs the coefficient estimates for income and balance in the multiple logistic regression model.
+
+```{r}
+boot.fn <- function(data, index) {
+  fit <- glm(default ~ income + balance, data=data, subset=index, family=binomial)
+  return(coef(fit)[c('income', 'balance')])
+}
+```
+
+c) Use the boot() function together with your boot.fn() function to estimate the standard errors of the logistic regression coefficients for income and balance.
+```{r}
+boot.fn <- function(data, index) {
+  fit <- glm(default ~ income + balance, data=data, subset=index, family=binomial)
+  return(coef(fit)[c('income', 'balance')])
+}
+
+set.seed(6115)
+boot_results <- boot(Default, boot.fn, R=1000)
+
+boot_se <- sqrt(diag(var(boot_results$t)))
+```
+
+d) Comment on the estimated standard errors obtained using the glm() function and using your bootstrap function.
+
+```{r error-calculation, echo=TRUE}
+print(std_errors)
+print(boot_se)
+
+```
+
+The bootstrap standard errors for income and balance are very close to the glm() function, which suggests that our assumptions are reasonable for the given data.
+
+## Chapter 6, Question 9
+a) Split the data set into a training set and a test set.
+```{r}
+library(glmnet)
+library(ISLR)
+library(pls)
+library(ggplot2)
+library(scales)
+
+data("College")
+
+set.seed(6115)
+index <- sample(1:nrow(College), nrow(College) * .7)
+
+training_set <- College[index, ]
+test_set <- College[-index, ]
+```
+
+b) Fit a linear model using least squares on the training set, and report the test error obtained.
+```{r}
+lm_model <- lm(Apps ~ ., data=training_set)
+
+predictions <- predict(lm_model, newdata=test_set)
+
+mse <- mean((test_set$Apps - predictions)^2)
+
+cat("Test MSE of the linear regression model: ", mse, "\n")
+```
+
+c) Fit a ridge regression model on the training set, with λ chosen by cross-validation. Report the test error obtained.
+
+Convert "Private" to numeric data type to resolve errors.
+```{r}
+training_set$Private <- as.numeric(training_set$Private == "Yes") 
+test_set$Private <- as.numeric(test_set$Private == "Yes")          
+sapply(training_set, class)
+sapply(test_set, class)
+```
+
+
+```{r}
+x_train <- as.matrix(training_set[, -which(names(training_set) == "Apps")])
+y_train <- training_set$Apps
+
+x_test <- as.matrix(test_set[, -which(names(test_set) == "Apps")])
+y_test <- test_set$Apps
+
+cv_ridge <- cv.glmnet(x_train, y_train, alpha=0)
+
+best_lambda <- cv_ridge$lambda.min
+
+ridge_predictions <- predict(cv_ridge, s=best_lambda, newx=x_test)
+
+ridge_mse <- mean((y_test - ridge_predictions)^2)
+
+cat("The optimal λ selected by cross-validation for the Ridge model: ", best_lambda, "\n")
+cat("Test MSE of the Ridge model: ", ridge_mse, "\n")
+```
+
+d) Fit a lasso model on the training set, with λ chosen by cross validation. Report the test error obtained, along with the number of non-zero coefficient estimates.
+```{r}
+x_train <- as.matrix(training_set[, -which(names(training_set) == "Apps")])
+y_train <- training_set$Apps
+
+x_test <- as.matrix(test_set[, -which(names(test_set) == "Apps")])
+y_test <- test_set$Apps
+
+cv_lasso <- cv.glmnet(x_train, y_train, alpha=1)
+
+best_lambda <- cv_lasso$lambda.min
+
+lasso_predictions <- predict(cv_lasso, s=best_lambda, newx=x_test)
+
+lasso_mse <- mean((y_test - lasso_predictions)^2)
+
+lasso_model <- glmnet(x_train, y_train, alpha=1)
+coef_lasso <- predict(lasso_model, type="coefficients", s=best_lambda)
+num_nonzero_coefs <- sum(coef_lasso != 0)
+
+cat("The optimal λ selected by cross-validation: ", best_lambda, "\n")
+cat("Test MSE of the Lasso model: ", lasso_mse, "\n")
+cat("Number of non-zero coefficients in the Lasso model: ", num_nonzero_coefs, "\n")
+```
+
+e) Fit a PCR model on the training set, with M chosen by cross validation. Report the test error obtained, along with the value of M selected by cross-validation.
+```{r}
+pcr_model <- pcr(Apps ~ ., data=training_set, scale=TRUE, validation="CV")
+
+rmsep_results <- RMSEP(pcr_model)
+str(rmsep_results)
+
+M_optimal <- which.min(rmsep_results$RMSEP)
+
+cv_rmsep <- rmsep_results$val[1, 1, ]
+
+M_optimal <- which.min(cv_rmsep)
+print(M_optimal)
+summary(pcr_model)
+M_optimal <- 17
+
+pcr_predictions <- predict(pcr_model, newdata=test_set, ncomp=M_optimal)
+
+pcr_mse <- mean((test_set$Apps - pcr_predictions)^2)
+
+cat("The optimal number of components selected by cross-validation: ", M_optimal, "\n")
+cat("Test MSE of the PCR model: ", pcr_mse, "\n")
+```
+
+f) Fit a PLS model on the training set, with M chosen by cross validation. Report the test error obtained, along with the value of M selected by cross-validation
+```{r}
+pls_model <- plsr(Apps ~ ., data=training_set, validation="CV")
+
+pls_predictions <- predict(pls_model, newdata=test_set, ncomp=M_optimal)
+
+pls_mse <- mean((test_set$Apps - pls_predictions)^2)
+
+cat("The optimal number of components selected by cross-validation: ", M_optimal, "\n")
+cat("Test MSE of the PLS model: ", pls_mse, "\n")
+```
+
+g) Comment on the results obtained. How accurately can we predict the number of college applications received? Is there much difference among the test errors resulting from these five approaches?
+
+```{r}
+test_mse <- c(
+  Linear = mse, 
+  Lasso = lasso_mse, 
+  Ridge = ridge_mse, 
+  PCR = pcr_mse, 
+  PLS = pls_mse
+)
+
+test_mse_df <- data.frame(Model = names(test_mse), MSE = test_mse / 1000)
+
+mse_plot <- ggplot(test_mse_df, aes(x = Model, y = MSE, fill = Model)) +
+            geom_bar(stat = "identity") +
+            geom_text(aes(label = scales::comma(MSE*1000)), vjust = -0.5) +
+            theme_minimal() +
+            labs(title = "Comparison of MSE Across Models (in thousands)",
+                 x = "Model",
+                 y = "MSE (000s)") +
+            theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+print(mse_plot)
+```
+Observations:
+
+- The similar and lower MSE of the linear, PCR, and PLS models suggests that we can predict the number of college applications received quite accurately with these models. The linear model, in particular, stands out for its simplicity combined with it's accuracy compared to more advanced models.
+
+- The close performance of different models (except for Ridge regression) indicates that the dataset may not have strong multicollinearity issues or may not benefit significantly from dimensionality reduction techniques.
+
+- Given the similar performance of the linear, PCR, and PLS models, the choice between them could depend on factors like interpretability, computational efficiency, and ease of explanation. The linear model, with its straightforward interpretation, might be the preferred model in cases where understanding the influence of each predictor is important.
+
+# Chapter 6, Question 11
+
+a) Try out some of the regression methods explored in this chapter, such as best subset selection, the lasso, ridge regression, and PCR. Present and discuss results for the approaches that you consider.
+```{r}
+library(MASS) 
+library(leaps)
+library(glmnet)
+library(pls)
+data(Boston)
+
+set.seed(6115)
+
+# Best subset selection
+best_subset_fit <- regsubsets(crim ~ ., data=Boston, nvmax=dim(Boston)[2]-1)
+summary_best_subset <- summary(best_subset_fit)
+best_model <- which.max(summary_best_subset$adjr2)
+coefficients_best_model <- coef(best_subset_fit, id = best_model)
+
+model_matrix <- model.matrix(crim ~ ., data = Boston)
+
+predictions <- model_matrix[, names(coefficients_best_model)] %*% coefficients_best_model
+best_subset_mse <- mean((Boston$crim - predictions)^2)
+cat("Best Subset Selection MSE: ", best_subset_mse, "\n")
+```
+
+```{r}
+x <- as.matrix(Boston[, -which(names(Boston) == "crim")])
+y <- Boston$crim
+
+# Lasso regression
+cv_lasso <- cv.glmnet(x, y, alpha=1)
+lasso_best_lambda <- cv_lasso$lambda.min
+lasso_model <- glmnet(x, y, alpha=1, lambda=lasso_best_lambda)
+print("Summary of Lasso Model")
+summary(lasso_model)
+lasso_predictions <- predict(lasso_model, s = lasso_best_lambda, newx = x)
+lasso_mse <- mean((y - lasso_predictions)^2)
+cat("Lasso Regression MSE: ", lasso_mse, "\n")
+cat("Optimal Lambda: ", lasso_best_lambda, "\n")
+lasso_coefficients <- coef(lasso_model, s = lasso_best_lambda)
+print(lasso_coefficients)
+```
+
+```{r}
+# Ridge regression
+cv_ridge <- cv.glmnet(x, y, alpha=0)
+ridge_best_lambda <- cv_ridge$lambda.min
+ridge_model <- glmnet(x, y, alpha=0, lambda=ridge_best_lambda)
+print("Summary of Ridge Model")
+summary(ridge_model)
+ridge_predictions <- predict(ridge_model, s = ridge_best_lambda, newx = x)
+ridge_mse <- mean((y - ridge_predictions)^2)
+cat("Ridge Regression MSE: ", ridge_mse, "\n")
+cat("Optimal Lambda: ", ridge_best_lambda, "\n")
+ridge_coefficients <- coef(ridge_model, s = ridge_best_lambda)
+print(ridge_coefficients)
+```
+
+```{r}
+# PCR
+pcr_model <- pcr(crim ~ ., data=Boston, scale=TRUE, validation="CV")
+
+# Calculate RMSEP and Determine Optimal Number of Components
+rmsep_results <- RMSEP(pcr_model)
+cv_rmsep <- rmsep_results$val[1, 1, ]
+M_optimal <- which.min(cv_rmsep)
+print(M_optimal)
+
+print("Summary of PCR Model")
+summary(pcr_model)
+M_optimal <- min(M_optimal, 13)
+
+# Predict Using PCR Model
+pcr_pred <- predict(pcr_model, newdata=Boston, ncomp=M_optimal)
+pcr_mse <- mean((Boston$crim - pcr_pred)^2)
+cat("PCR MSE: ", pcr_mse, "\n")
+```
+Results:
+```{r}
+cat("Best Subset Selection MSE: ", best_subset_mse, "\n")
+cat("Lasso Regression MSE: ", lasso_mse, "\n")
+cat("Ridge Regression MSE: ", ridge_mse, "\n")
+cat("PCR MSE: ", pcr_mse)
+```
+
+b) Propose a model (or set of models) that seem to perform well on this data set, and justify your answer. Make sure that you are evaluating model performance using validation set error, cross validation, or some other reasonable alternative, as opposed to using training error.
+
+Conclusion:
+- The PCR model seems to be the most effective for this dataset, offering the best balance between predictive accuracy and handling potential issues like multicollinearity. It has the lowest MSE among the models tested. This suggests that it provides the best predictive accuracy for the crim variable in the Boston dataset. Also, the PCR model reduces the dimensionality of the predictors while keeping the most significant variation, which can be very helpful when multi-collinearity is present or when the predictors are noisy.
+
+Justification/Sample Plot:
+```{r}
+library(pls)
+
+pcr_model <- pcr(crim ~ ., data=Boston, scale=TRUE)
+
+loadings_pcr <- loadings(pcr_model)
+
+var_explained <- apply(loadings_pcr^2, 2, sum)
+
+cum_var_explained <- cumsum(var_explained) / sum(var_explained)
+
+plot(cum_var_explained, xlab = "Number of Components", 
+     ylab = "Cumulative Proportion of Variance Explained",
+     main = "Scree Plot for PCR on Boston Dataset", type = "b")
+
+abline(v = 13, col = "red", lty = 2)
+
+```
+
+
+c) Does your chosen model involve all of the features in the data set? Why or why not?
+
+No, the PCR model does not involve all of the original features of the dataset directly; instead, it transforms these features into a smaller set of uncorrelated principal components. These components, which are linear combinations of the original variables, aim to capture as much of the variability in the data as possible while also reducing dimensionality. Although all original features contribute to creating these components, the regression is performed on the components themselves, not on the original features. Thus, the interpretation of the results can be more complex due to the transformed nature of the variables used in the model.
+
+
+

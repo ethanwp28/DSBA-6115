@@ -1,0 +1,88 @@
+---
+title: "HW1"
+author: "Ethan Pinto"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+(i) Generate the diagrams to match those in Lecture note 1.
+
+```{r}
+library(ISLR)
+library(splines)
+
+data(Wage)
+dim(Wage)
+names(Wage)
+attach(Wage)
+W1=summary(Wage)
+
+par(mfrow = c(1, 3))
+
+agelims=range(age)
+age.grid=seq(from=agelims[1], to=agelims[2])
+
+fit2 = lm(wage~ns(age, df=5), data=Wage)
+pred=predict(fit2, newdata=list(age=age.grid), se=T)
+
+plot(x=age,y=wage,col="gray")
+title("Natural Cubic Splines")
+lines(age.grid,pred$fit,lwd=2, col="blue")
+lines(age.grid,pred$fit+2*pred$se, lty="dashed")
+lines(age.grid,pred$fit-2*pred$se, lty="dashed")
+
+yearlims=range(year)
+year.grid=seq(from=yearlims[1], to=yearlims[2])
+fit3 = lm(wage ~ year, data=Wage)
+pred2=predict(fit3, newdata=list(year=year.grid), se=T)
+
+plot(x=year,y=wage,col="gray")
+title("Wage vs Year")
+lines(year.grid,pred2$fit,lwd=2, col="blue")
+
+boxplot(wage ~ education, data = Wage, col = c("cornflowerblue", "green", "yellow", "blue", "orange"))
+title("Wage vs Education Level")
+par(mfrow = c(1, 1))
+
+
+```
+
+(ii) Show that RSS decreases as you add more variables to the model.
+
+```{r}
+library(ISLR)
+library(ggplot2)
+
+data = read.csv('C:\\Users\\28epi\\Documents\\DSBA 6115\\Advertising.csv', head=T)
+
+y = data$Sales
+x1 = data$TV
+x2 = data$Radio
+x3 = data$Newspaper
+
+null_model = lm(Sales~1, data=data)
+null_rss = sum(residuals(null_model)^2)
+
+mod_1 = lm(y ~ x1)
+rss_1 = sum(residuals(mod_1)^2)
+
+mod_2 = lm(y ~ x1 + x2)
+rss_2 = sum(residuals(mod_2)^2)
+
+mod_3 = lm(y ~ x1 + x2 + x3)
+rss_3 = sum(residuals(mod_3)^2)
+
+rss_data = data.frame(
+  Variables = c("Null Model", "1 Variable", "2 Variables", "3 Variables"),
+  RSS = c(null_rss, rss_1, rss_2, rss_3)
+)
+
+ggplot(rss_data, aes(x = Variables, y = RSS)) +
+  geom_bar(stat = "identity", fill = "blue", alpha = 0.7) +
+  geom_text(aes(label = round(RSS, 2)), vjust = -0.3) +
+  ggtitle("RSS vs Number of Variables") +
+  xlab("Number of Variables") +
+  ylab("RSS")
+
+```
+

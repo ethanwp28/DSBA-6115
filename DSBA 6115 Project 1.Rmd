@@ -1,0 +1,249 @@
+---
+title: "DSBA Group Project"
+author: "Ethan Pinto"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+The data set faces.RData (courtesy of Havard Rue, NTNU) contains portraits or grey
+level images of n = 200 medical students at Stanford University, where i = 1,…,100 are
+male portraits and i = 101,…, 200 are female portraits. Each portrait can be thought of
+as a matrix of 100 by 100 pixels and is recorded as a vector of length 𝑝 = 100
+2 = 10000,
+treating each pixel as a variable. The function image() on R scales and maps each pixel to a grey
+value (black being '0' and white being '1') and can be used to display a 10000 × 1 vector as an
+image.
+
+Project setup:
+```{r}
+load("faces.rdata")
+
+# install.packages("pls")
+# install.packages("rda")
+# install.packages("klaR")
+
+library(pls)
+library(MASS)
+library(sda)
+library(rda)
+library(klaR)
+```
+
+
+a) Estimate the mean of the portraits for each gende and display them as 100 × 100
+images. Does the mean vary across the image? Which features are represented in the
+estimated mean portraits? The portraits are a mix of images taken at the shoulders and
+at the chin, such that the relative size of the face varies significantly. The variable
+shoulder indicates whether a portrait includes the shoulders or not.
+
+```{r}
+reshape_portrait <- function(vector) {
+  matrix(vector, nrow = 100, ncol = 100)
+}
+
+mean_male_portrait <- apply(faces[, 1:100], 1, mean)
+mean_female_portrait <- apply(faces[, 101:200], 1, mean)
+
+mean_male_image <- reshape_portrait(mean_male_portrait)
+mean_female_image <- reshape_portrait(mean_female_portrait)
+
+image(1:100, 1:100, mean_male_image[, 100:1], col = grey(0:255/255), main = "Mean Male Portrait")
+image(1:100, 1:100, mean_female_image[, 100:1], col = grey(0:255/255), main = "Mean Female Portrait")
+
+
+```
+
+b) Find the principal components of the whole data set and display the first three eigenvectors (the
+principal component directions) as 100 × 100 images. The images of the eigenvector are
+usually referred to as eigenfaces in context of face recognition. What do the first three
+components represent in terms of facial or image features? How many principal components are
+needed to express 80% of the variation in the data set?
+
+```{r}
+pca <- prcomp(faces, scale. = FALSE)
+eigenvectors <- pca$x[, 1:3]
+
+
+eigenmatrix1 <- matrix(eigenvectors[,1],nrow=100, ncol=100)
+
+eigenmatrix2 <- matrix(eigenvectors[,2],nrow=100, ncol=100)
+
+eigenmatrix3 <- matrix(eigenvectors[,3],nrow=100, ncol=100)
+
+image(eigenmatrix1, col = gray.colors(256))
+image(eigenmatrix2, col = gray.colors(256))
+image(eigenmatrix3, col = gray.colors(256))
+
+summary(pca)
+```
+
+c) Find the first three principal components (𝑛 × 1 vectors) of the whole data set. Plot the first
+and second principal components and the first and third principal components against each
+other and color the observations according to gender. Then color the plots according to the
+shoulders being present or not. What do you conclude? Display all four figures.
+
+```{r}
+pc1 <- pca$x[, 1]
+pc2 <- pca$x[, 2]
+pc3 <- pca$x[, 3]
+
+gender <- c(rep("Male", 100), rep("Female", 100))
+
+
+plot(pc1, pc2, col = ifelse(gender == "Male", "blue", "red"), xlab = "PC1", ylab = "PC2", main = "PC1 vs PC2 by Gender")
+plot(pc1, pc3, col = ifelse(gender == "Male", "blue", "red"), xlab = "PC1", ylab = "PC3", main = "PC1 vs PC3 by Gender")
+
+plot(pc1, pc2, col = ifelse(shoulder, "green", "purple"), xlab = "PC1", ylab = "PC2", main = "PC1 vs PC2 by Shoulders")
+plot(pc1, pc3, col = ifelse(shoulder, "green", "purple"), xlab = "PC1", ylab = "PC3", main = "PC1 vs PC3 by Shoulders")
+
+```
+
+d) Recode gender as an indicator variable
+        −1, if Gi = male
+yi = {
+        1, if Gi = female
+
+Construct a classifier for gender using principal component regression (PCR) with 𝑦𝑖 as
+the response, and classify an observation as female if f(xi) > 0. Use leave-one-out
+cross-validation to select the number of components, 𝑚 < 200, and select the smallest
+m if the cross-validation error has several minima. What is the misclassification rate (the
+error with a 1-0 loss function on the training data)?
+
+```{r}
+y <- ifelse(gender == "Male", -1, 1)
+
+faces_df <- data.frame(faces)
+faces_df <- cbind(y = y, faces_df)
+
+set.seed(6115) 
+pcr_model <- pcr(y ~ ., data = faces_df, scale = TRUE, validation = "LOO")
+
+validation_stats <- summary(pcr_model)
+opt_m <- which.min(validation_stats$val$MSEP)
+
+predictions <- predict(pcr_model, ncomp = opt_m)
+predicted_class <- ifelse(predictions > 0, 1, -1)
+misclassification_rate <- mean(predicted_class != y)
+
+print(misclassification_rate)
+
+```
+
+e) Construct a classifier for gender using partial least square (PLS) with 𝑦𝑖 as the response,
+and classify an observation as female if 𝑓̂(𝑥𝑖) > 0. Use leave-one-out cross-validation
+to select the number of PLS directions, m < 200, and select the smallest m if the crossvalidation error has several minima. What is the misclassification rate (the error with a
+1-0 loss function on the training data) now? Why does the optimal m for PCR and PLS
+differ
+
+```{r}
+set.seed(6115)
+pls_model <- plsr(y ~ ., data = faces_df, scale = TRUE, validation = "LOO")
+
+validation_stats_pls <- summary(pls_model)
+opt_m_pls <- which.min(validation_stats_pls$val$MSEP)
+
+predictions_pls <- predict(pls_model, ncomp = opt_m_pls)
+predicted_class_pls <- ifelse(predictions_pls > 0, 1, -1)
+misclassification_rate_pls <- mean(predicted_class_pls != y)
+
+print(misclassification_rate_pls)
+
+```
+
+Ordinary linear discriminant analysis (LDA) and quadratic discriminant analysis (QDA) cannot be
+used in a high-dimensional setting with p > n, as the sample covariance matrix will be singular.
+You will now explore two ways to avoid this issue; reduce the dimension and regularize the
+covariance matrix.
+
+f) Let the whole data set (10000 × 200) to be represented by the first five principal
+components (5 × 200). Use the reduced data as input for QDA and construct a classifier for
+gender. What is misclassification rate on the training data? Plot the quadratic decision
+boundaries in the figures from 3(c).
+
+```{r}
+faces_reduced <- as.data.frame(pca$rotation[, 1:5])
+
+y_factor <- as.factor(ifelse(1:200 <= 100, "Male", "Female"))
+qda_model <- qda(x = faces_reduced, grouping = y_factor)
+
+qda_predictions <- predict(qda_model, faces_reduced)
+misclassification_rate_qda <- mean(qda_predictions$class != y_factor)
+
+print(misclassification_rate_qda)
+
+mean_pc3 <- mean(faces_reduced[, 3])
+mean_pc4 <- mean(faces_reduced[, 4])
+mean_pc5 <- mean(faces_reduced[, 5])
+
+xrange <- range(faces_reduced[, 1])
+yrange <- range(faces_reduced[, 2])
+
+grid <- expand.grid(PC1 = seq(from = xrange[1], to = xrange[2], length = 100),
+                    PC2 = seq(from = yrange[1], to = yrange[2], length = 100),
+                    PC3 = mean_pc3,
+                    PC4 = mean_pc4,
+                    PC5 = mean_pc5)
+
+grid$predicted_class <- predict(qda_model, newdata = grid)$class
+
+plot(faces_reduced[, 1], faces_reduced[, 2], col = as.numeric(y_factor), xlab = "PC1", ylab = "PC2", pch = 19)
+plot(faces_reduced[, 1], faces_reduced[, 3], col = as.numeric(y_factor), xlab = "PC1", ylab = "PC3", pch = 19)
+
+contour(xrange, yrange, matrix(as.numeric(grid$predicted_class), length(xrange), length(yrange)), add = TRUE)
+
+```
+
+g) Now consider the gender and the shoulder categories together as four different categories
+(maleShoulder, maleNoShoulder, femaleShoulder and femaleNoShoulder). Use the first five
+principal components (5_200) to construct a QDA classifier for the four gender-shoulder
+categories and classify the training data. Merge the classifications for the groups with and
+without shoulders within each gender, such that you end up with a classification for gender.
+Compare the result to the classification in f). Does the misclassification rate decrease when
+taking into account the shoulders?
+
+```{r}
+gender_shoulder <- ifelse(y == -1, ifelse(shoulder, "maleShoulder", "maleNoShoulder"),
+                          ifelse(shoulder, "femaleShoulder", "femaleNoShoulder"))
+
+qda_model_gs <- qda(x = faces_reduced, grouping = as.factor(gender_shoulder))
+qda_predictions_gs <- predict(qda_model_gs, faces_reduced)
+misclassification_rate_gs <- mean(qda_predictions_gs$class != gender_shoulder)
+print(misclassification_rate_gs)
+
+```
+
+h) Finally, return to the whole data set and use a version of regularized LDA to classify only
+gender. Motivate how you regularize the sample covariance matrix and argue for your
+choice of tuning (penalty) parameter. What is the misclassification rate?
+
+(This method takes a very long time)
+
+```{r}
+lda_data <- as.data.frame(faces_pca)
+lda_data$y_factor <- y_factor
+
+lda_model <- lda(y_factor ~ ., data = lda_data)
+
+lda_predictions <- predict(lda_model, newdata = lda_data)
+predicted_gender <- as.numeric(lda_predictions$class)
+misclassification_rate_lda <- mean(predicted_gender != as.numeric(lda_data$y_factor))
+
+print(misclassification_rate_lda)
+
+```
+
+Faster method:
+
+```{r}
+rda_model <- rda(x=data.matrix(faces),y=y)
+rda_predictions <- predict(rda_model, x=data.matrix(faces),y=y,xnew=data.matrix(faces),alpha=0, delta=0.667)
+
+misclassification_rate_rda <- mean(rda_predictions != y)
+
+print(misclassification_rate_rda)
+```
+
