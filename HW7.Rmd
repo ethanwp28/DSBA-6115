@@ -12,59 +12,129 @@ For your homework, download the authorship data set from the course webpage.
 This data set consists of word counts from chapters written by four British authors. 
 Use the provided training and testing splits of the authorship data. Compare and contrast the following methods for predicting authorship: 
 
-(a)	Classification Trees. (Which error measure did you use? Why?) 
-
 Preparing Data:
 ```{r}
 ## install.packages("caret")
 ## install.packages("rpart")
 ## install.packages("readr")
 ## install.packages("rpart.plot")
+## install.packages("randomForest")
+## install.packages("gbm")
+## install.packages("xgboost")
 
 library(ISLR)
 library(readr)
 library(caret)
 library(rpart)
+library(randomForest)
+library(xgboost)
+library(ggplot2)
+library(plotly)
 
-trainingData <- read.csv("C:\\Users\\28epi\\Downloads\\author_training.csv")
-testingData <- read.csv("C:\\Users\\28epi\\Downloads\\author_testing.csv")
 
-levels(predictions)
-levels(testingData$Author)
+trainingData <- read.csv("author_training.csv")
+testingData <- read.csv("author_testing.csv")
 
-table(predictions)
-raw_predictions <- predict(authorshipModel, testingData, type = "class")
-head(raw_predictions)
+trainingData$Author <- factor(trainingData$Author)
+testingData$Author <- factor(testingData$Author)
 
 ```
 
+(a)	Classification Trees. (Which error measure did you use? Why?) 
 
 ```{r}
-predictions <- factor(raw_predictions, levels = levels(testingData$Author))
+authorshipModel <- rpart(Author ~ ., data = trainingData, method = "class")
+
+raw_predictions <- predict(authorshipModel, testingData, type = "class")
+
+predictions <- factor(raw_predictions, levels = levels(trainingData$Author))
+
 levels(predictions)
+
 table(predictions)
+
 confusionMatrix(predictions, testingData$Author)
 ```
 
+In the above function, the confusion matrix is used as primary error measure. The confusion matrix provides a variety of useful information that we can use to interpret our results from the tree. This matrix compares the predicted labels with the actual labels, and shows the correct and incorrect predictions, as well as the accuracy, kappa, and p-values.
 
 (b)	Bagging. 
 ```{r}
+authorshipBaggingModel <- randomForest(Author ~ ., data = trainingData, ntree = 100)
+baggingPredictions <- predict(authorshipBaggingModel, testingData)
+
+confusionMatrix(baggingPredictions, testingData$Author)
 
 ```
-
 
 (c)	Boosting. (Which boosting method did you use? Why?) 
 ```{r}
+trainingLabels <- as.numeric(trainingData$Author) - 1
+trainingDataMatrix <- xgb.DMatrix(data.matrix(trainingData[, -which(names(trainingData) == "Author")]), label = trainingLabels)
+
+testingLabels <- as.numeric(testingData$Author) - 1
+testingDataMatrix <- xgb.DMatrix(data.matrix(testingData[, -which(names(testingData) == "Author")]), label = testingLabels)
+
+params <- list(
+  objective = "multi:softprob",
+  num_class = length(unique(trainingData$Author)),
+  eta = 0.3,
+  max_depth = 6
+)
+
+nrounds <- 100
+
+xgbModel <- xgb.train(params = params, data = trainingDataMatrix, nrounds = nrounds)
+
+xgbPredictions <- predict(xgbModel, testingDataMatrix)
+
+xgbPredictions <- matrix(xgbPredictions, ncol = length(unique(trainingData$Author)), byrow = TRUE)
+predictedLabels <- max.col(xgbPredictions) - 1  # Convert back to original class labels
+
+confusionMatrix(factor(predictedLabels, levels = unique(testingLabels)), factor(testingLabels, levels = unique(testingLabels)))
 
 ```
+
+I used the Gradient Boosting method to predict the accuracy. Gradient boosting is typically the most accurate of the boosting methods, and is very flexible, due to the parameters that offer tuning options to ensure the model is correctly fitted, for example.
 
 (d)	Random Forests. (Which parameter settings did you use? Why?) 
 ```{r}
+authorshipRandomForestModel <- randomForest(Author ~ ., data = trainingData, ntree = 1000)
+
+rfPredictions <- predict(authorshipRandomForestModel, testingData)
+
+confusionMatrix(rfPredictions, testingData$Author)
 
 ```
+
+In this model, the only arbitrary parameter setting I set was ntree = 500. This parameter determines the number of trees in the forest. More trees lead to better performance. I tested several different sizes for ntree, but anything greater than ntree = 1000 only increased computation time without significantly affecting the generated statistics. The other parameters, mtry, nodesize, and maxnodes, are determined by default by the model. The mtry paremeter is typically the square root of the independent variables, so I wanted to keep this as default. Similarly, the minimum terminal node size and max number of of terminal node trees (nodesize, maxnodes respectively) are also kept default
 
 Reflect upon your results. Which method yields the best error rate? Which method yields the most interpretable results? Which words are most important for authorship attribution? 
+
+•	Both the bagging method and random forest method yielded the best accuracy of 98.41% (error rate of 1.59%). The fact that the bagging and random forest methods both yielded the same prediction accuracy suggests that there are not many strong predictors in the dataset, as both methods have similar functionality of picking the strongest predictors, regardless of the randomness or subset of information introduced in the dataset.
+
+•	In terms of interpretability, the use of the confusion matrix simplifies the results of each model, however generally speaking, the classification tree method is the “simplest” method and therefore most interpretable.
+
+•	To find the words that are most important for authorship attribution, see the below graph:
+
 ```{r}
+importance_matrix <- importance(authorshipRandomForestModel)
+
+importance_df <- as.data.frame(importance_matrix)
+
+importance_df$Word = rownames(importance_df)
+
+top_n <- 20  
+
+top_importance_df <- head(importance_df[order(-importance_df$MeanDecreaseGini), ], top_n)
+
+# Graph the top 20 most important words
+
+ggplot(top_importance_df, aes(x = reorder(Word, MeanDecreaseGini), y = MeanDecreaseGini)) +
+  geom_bar(stat = "identity") +
+  theme(axis.text.x = element_text(angle = 0)) +
+  labs(x = "Word", y = "Importance (Mean Decrease in Gini)", title = "Top Word Importance for Authorship Attribution")
 
 ```
 
+As we can see from the graph, the most important words for authorship attribution are “was”, “be”, “the”, “to”, and “her”.
